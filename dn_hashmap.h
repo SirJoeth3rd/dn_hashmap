@@ -7,6 +7,8 @@
    Key assumed to be uint64_t, up to the user to convert their actual keys to u64
  */
 
+// TODO: keep the actual items in a dn_vector, only keep {int distance, int key, void* in_vector_pos} struct in the hashmap.
+
 #define MAX_ITEM_SIZE 64
 
 static const int PRIMES[21] = {
@@ -44,7 +46,7 @@ typedef struct {
   unsigned int count;
   unsigned int prime_index;
   void* (*allocator)(size_t bytes);
-  void (*collector)(void* buffer);
+  void (*collector)(void* buffer, size_t bytes);
   uint8_t default_value[MAX_ITEM_SIZE];
 } HashMap;
 
