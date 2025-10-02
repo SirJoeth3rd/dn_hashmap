@@ -1,17 +1,16 @@
-#include <stdbool.h>
-#include <stdlib.h>
 #include <stdint.h>
-
+#include <stddef.h>
+#include <string.h>
+#include "dn_vector.h"
 
 /* A generic hashmap in C, implemented by considering every key, item as a group of bytes.
    Key assumed to be uint64_t, up to the user to convert their actual keys to u64
  */
 
 // TODO: keep the actual items in a dn_vector, only keep {int distance, int key, void* in_vector_pos} struct in the hashmap.
+#define MAX_PRIME_INDEX 21
 
-#define MAX_ITEM_SIZE 64
-
-static const int PRIMES[21] = {
+static const unsigned int PRIMES[MAX_PRIME_INDEX] = {
   1543,
   3079,
   6151,
@@ -38,93 +37,104 @@ static const int PRIMES[21] = {
 typedef struct {
   uint8_t distance;
   uint64_t key;
-} HashMeta;
+  void* data; // zero is a good null value now
+} HashCell;
 
 typedef struct {
-  void* buffer;
-  size_t cell_size;
-  unsigned int count;
+  Vector item_vector;
+  HashCell* cells;
   unsigned int prime_index;
   void* (*allocator)(size_t bytes);
-  void (*collector)(void* buffer, size_t bytes);
-  uint8_t default_value[MAX_ITEM_SIZE];
+  void (*collector)(void* buffer);
 } HashMap;
 
-HashMap hashmap
-(
- size_t item_size,
- void* (*allocator)(size_t bytes),
- void (*collector)(void* buffer)
- );
-
+HashMap hm_init(size_t item_size, allocator, collector);
 HashMap hm_resize(HashMap map);
 HashMap hm_put(HashMap map, uint64_t key, void* item);
 HashMap hm_del(HashMap map, uint64_t key);
 void* hm_get(HashMap map, uint64_t key);
 
-void hm_bytes_copy(void* dest, uint8_t* src, size_t len) {
-    uint8_t* cdest = (uint8_t*)dest;
 
-    for (size_t i = 0; i < len; i++) {
-      cdest[i] = src[i];
-    }
-}
+HashMap hm_init_vec(Vector v, allocator alloc_f, collector collect_f) {
+  // if you need more granularity like different allocators for vector vs hashmap
+  HashMap map;
 
-int hm_bytes_comp(uint8_t* a, uint8_t* b, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    if (a[i] != b[i]) {
-      return 0;
+  if (v.length > PRIMES[MAX_PRIME_INDEX]) {
+    // TODO: how do we error this?
+    //  I don't think we have too yet
+  }
+  
+  for (unsigned int i = 0; i < 21; i++) {
+    if (PRIMES[i] >= v.length) {
+      map.prime_index = i;
+      break;
     }
   }
-  return 1;
+
+  if (v.length != PRIMES[map.prime_index]) {
+    v = vec_resize(v, PRIMES[map.prime_index]);
+  }
+
+  map.item_vector = v;
+  map.allocator = alloc_f;
+  map.collector = collect_f;
+  map.cells = alloc_f(v.length * v.item_size);
+  
+  return map;
 }
 
-HashMeta* hm_location_meta(HashMap map, int index) {
-  return (HashMeta*)(map.buffer + index*map.cell_size);
-}
-
-void* hm_location_data(HashMap map, int index) {
-  return (map.buffer + index*map.cell_size + sizeof(HashMeta));
-}
-
-int hm_is_default_val(HashMap map, int index) {
-  uint8_t* data = hm_location_data(map, index);
-  return hm_bytes_comp(data, map.default_value, map.cell_size - sizeof(HashMeta));
+HashMap hm_init(size_t item_size, allocator alloc_f, collector collect_f) {
+  HashMap map;
+  map.prime_index = 0;
+  map.item_vector = vec_init(PRIMES[map.prime_index], item_size, alloc_f, collect_f);
+  map.allocator = alloc_f;
+  map.collector = collect_f;
+  return map;
 }
 
 void* hm_get(HashMap map, uint64_t key) {
   int distance = 0;
-  int index = key % PRIMES[map.count];
+  int index = key % PRIMES[map.item_vector.length];
 
-  while (!hm_is_default_val(map, index)) {
-    if (hm_location_meta(map, index)->key == key) {
-      return hm_location_data(map, index);
+  while (!map.cells[index].data) {
+    if (map.cells[index].key == key) {
+      return map.cells[index].data;
     }
-    if (hm_location_meta(map, index)->distance < distance) {
+    if (map.cells[index].distance < distance) {
       return NULL;
     }
     distance++;
-    index += map.cell_size;
+    index++;
   }
-
   return NULL;
 }
 
 HashMap hm_del(HashMap map, uint64_t key) {
   int distance = 0;
   int index = key % PRIMES[map.prime_index];
+  
+  while (!map.cells[index].data) {
+    if (map.cells[index].key == key) {
+      // TODO, also remove the item from the vector. Potentially as easy as just memcpying i+1 over i until end of vector
+      /* memcpy(map.cells[index].data, map.cells[index].data + 1, map.cells[index].data); */
+      memset(&map.cells[index], 0, sizeof(*map.cells));
+      for (int i = index; map.cells[i+1].data; i++) {
+	if (map.cells[i + 1].distance == 0) {
+	  break;
+	} else {
+	  memcpy(&map.cells[i],&map.cells[i+1],sizeof(*map.cells));
+	  map.cells[i].distance--;
+	}
+      }
+      break;
+    }
 
-  while (!hm_is_default_val(map, index)) {
-    if (hm_location_meta(map, index)->key == key) {
-      map.count--;
-      hm_bytes_copy(hm_location_data(map, index), map.default_value, map.cell_size - sizeof(HashMeta));
+    if (map.cells[index].distance < distance) {
       break;
     }
-    if (hm_location_meta(map, index).distance < distance) {
-      break;
-    }
+    
     distance++;
-    index += map.cell_size;
+    index++;
   }
 
   return map;
