@@ -8,9 +8,9 @@
  */
 
 // TODO: keep the actual items in a dn_vector, only keep {int distance, int key, void* in_vector_pos} struct in the hashmap.
-#define MAX_PRIME_INDEX 21
+#define MAX_PRIME_INDEX 20
 
-static const unsigned int PRIMES[MAX_PRIME_INDEX] = {
+static const unsigned int PRIMES[MAX_PRIME_INDEX + 1] = {
   1543,
   3079,
   6151,
@@ -54,6 +54,15 @@ HashMap hm_put(HashMap map, uint64_t key, void* item);
 HashMap hm_del(HashMap map, uint64_t key);
 void* hm_get(HashMap map, uint64_t key);
 
+static unsigned int closest_prime_index(unsigned int length) {
+  for (unsigned int i = 0; i < 21; i++) {
+    if (PRIMES[i] >= length) {
+      return i;
+    }
+  }
+  // TODO: error? maybe just raise a catastrophic crash
+  return 0;
+}
 
 HashMap hm_init_vec(Vector v, allocator alloc_f, collector collect_f) {
   // if you need more granularity like different allocators for vector vs hashmap
@@ -116,6 +125,11 @@ HashMap hm_del(HashMap map, uint64_t key) {
   while (!map.cells[index].data) {
     if (map.cells[index].key == key) {
       // TODO, also remove the item from the vector. Potentially as easy as just memcpying i+1 over i until end of vector
+      // actually no that will invalidate every other cell, damn
+      // wait wait it's still possible, loop over every cell and only decrement the data
+      //  pointer if it's more then the delted position in the vector.
+      //but deleting is actually REALLY expensive now. Should be fine though just don't
+      // unless you really need to. Perhaps revisit the hashmap without vector dependency idea.
       /* memcpy(map.cells[index].data, map.cells[index].data + 1, map.cells[index].data); */
       memset(&map.cells[index], 0, sizeof(*map.cells));
       for (int i = index; map.cells[i+1].data; i++) {
@@ -141,60 +155,51 @@ HashMap hm_del(HashMap map, uint64_t key) {
 }
 
 HashMap hm_put(HashMap map, uint64_t key, void* item) {
-  if (map.count > (unsigned int)(PRIMES[map.prime_index] * 0.66)) {
+  if (map.item_vector.count > (unsigned int)(map.item_vector.length * 0.66)) {
     map = hm_resize(map);
   }
-  
-  int index = key % PRIMES[map.prime_index]; // the hash
-  HashMeta meta = *hm_location_meta(map, index);
-  HashMeta tmp_meta;
-  HashMeta* location_meta;
-  
-  uint8_t item_buffer[map.cell_size - sizeof(HashMeta)];
-  hm_bytes_copy(item_buffer, item, map.cell_size - sizeof(HashMeta));
-  uint8_t tmp_item_buffer[map.cell_size - sizeof(HashMeta)];
 
-  while (!hm_is_default_val(map, index)) {
-    location_meta = hm_location_meta(map, index);
-    if (meta.distance > location_meta->distance) {
-      void* data_location = hm_location_data(map, index);
-      hm_bytes_copy(tmp_item_buffer, data_location, map.cell_size - sizeof(HashMeta));
-      hm_bytes_copy(data_location, item_buffer, map.cell_size - sizeof(HashMeta));
-      hm_bytes_copy(item_buffer, tmp_item_buffer, map.cell_size - sizeof(HashMeta));
+  unsigned int index = key % map.item_vector.length;
+  HashCell tmpcell, currcell;
 
-      tmp_meta = *location_meta;
-      *location_meta = meta;
-      meta = tmp_meta;
+  currcell = map.cells[key % map.item_vector.length];
+
+  while (map.cells[index].data || map.cells[index].key != key) {
+    if (map.cells[index].distance > currcell.distance) {
+      tmpcell = map.cells[index];
+      map.cells[index] = currcell;
+      currcell = tmpcell;
     }
-    meta.distance++;
+    currcell.distance++;
     index++;
   }
+  
+  void* item_ptr = vec_add(&map.item_vector, item);
+  map.item_vector.count++;
 
-  hm_bytes_copy(hm_location_data(map, index),item_buffer, map.cell_size - sizeof(HashMeta));
-  *hm_location_meta(map, index) = meta;
-  map.count++;
+  currcell.data = item_ptr;
+  map.cells[index] = currcell;
+  
   return map;
 }
 
 HashMap hm_resize(HashMap map) {
-  HashMap new_map;
-  
-  new_map.prime_index = map.prime_index + 1;
-  new_map.cell_size = map.cell_size;
-  new_map.allocator = map.allocator;
-  new_map.collector = map.collector;
-  hm_bytes_copy(new_map.default_value, map.default_value, MAX_ITEM_SIZE);
-  
-  new_map.buffer = map.allocator(map.cell_size * PRIMES[new_map.prime_index]);
-  map.collector(map.buffer);
-  
-  new_map.count = 0;
-  for (int i = 0; i < PRIMES[map.prime_index]; i++) {
-    if (!hm_is_default_val(map, i)) {
-      new_map = hm_put(new_map, hm_location_meta(map, i)->key,hm_location_data(map, i));
+  HashMap newmap;
+
+  newmap.allocator = map.allocator;
+  newmap.collector = map.collector;
+  newmap.prime_index = map.prime_index + 1;
+  newmap.item_vector = vec_resize(map.item_vector, PRIMES[newmap.prime_index]);
+  newmap.cells = map.allocator(PRIMES[newmap.prime_index]);
+
+  for (unsigned int i = 0; i < map.item_vector.length; i++) {
+    if (map.cells[i].data) {
+      newmap = hm_put(newmap, map.cells[i].key, map.cells[i].data);
     }
   }
+
+  map.collector(map.cells);
   
-  return new_map;
+  return newmap;
 }
 
