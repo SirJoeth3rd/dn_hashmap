@@ -120,29 +120,24 @@ void* hm_get(HashMap map, uint64_t key) {
 
 HashMap hm_del(HashMap map, uint64_t key) {
   int distance = 0;
-  int index = key % PRIMES[map.prime_index];
-  
-  while (!map.cells[index].data) {
+  int index = key % map.item_vector.length;
+
+  void* deleted_item_pos;
+
+  while (map.cells[index].data) {
     if (map.cells[index].key == key) {
-      // TODO, also remove the item from the vector. Potentially as easy as just memcpying i+1 over i until end of vector
-      // actually no that will invalidate every other cell, damn
-      // wait wait it's still possible, loop over every cell and only decrement the data
-      //  pointer if it's more then the delted position in the vector.
-      //but deleting is actually REALLY expensive now. Should be fine though just don't
-      // unless you really need to. Perhaps revisit the hashmap without vector dependency idea.
-      /* memcpy(map.cells[index].data, map.cells[index].data + 1, map.cells[index].data); */
-      memset(&map.cells[index], 0, sizeof(*map.cells));
+      deleted_item_pos = map.cells[index].data;
+      map.cells[index] = (HashCell){0};
       for (int i = index; map.cells[i+1].data; i++) {
-	if (map.cells[i + 1].distance == 0) {
+	if (map.cells[i+1].distance == 0) {
 	  break;
 	} else {
-	  memcpy(&map.cells[i],&map.cells[i+1],sizeof(*map.cells));
+	  map.cells[i] = map.cells[i+1];
 	  map.cells[i].distance--;
 	}
       }
-      break;
     }
-
+    
     if (map.cells[index].distance < distance) {
       break;
     }
@@ -151,7 +146,16 @@ HashMap hm_del(HashMap map, uint64_t key) {
     index++;
   }
 
-  return map;
+  // move every item after the deleted one back
+  size_t length_after = ((map.item_vector.buffer + map.item_vector.item_size * map.item_vector.length) - deleted_item_pos - map.item_vector.item_size);
+  memcpy(deleted_item_pos, deleted_item_pos + map.item_vector.item_size, length_after);
+
+  // point every cell to it's new item position
+  for (unsigned int i = 0; i < map.item_vector.length; i++) {
+    if (map.cells[i].data > deleted_item_pos) {
+      map.cells[i].data -= map.item_vector.item_size;
+    }
+  }
 }
 
 HashMap hm_put(HashMap map, uint64_t key, void* item) {
