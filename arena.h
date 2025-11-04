@@ -2,15 +2,23 @@
   Arena allocator implementation
 
   This was originally tsoding's that I mangled into my own
+
+  Some specifics about this implementation.
+  -- It's untyped, meaning it's up to the user to provide the size to the arena
+  -- Also defined in here is the Allocator struct, this is not specific to the Arena.
  */
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h>
+
+static const size_t PAGE_SIZE = 4096;
+// TODO: remove this assumption PAGE_SIZE = 4096
 
 struct Region {
   void* buffer;
-  size_t capacity;
-  size_t item_size;
+  size_t balance; // bytes already used
+  size_t capacity; // total bytes
   struct Region* next;
 };
 
@@ -18,15 +26,8 @@ typedef struct Region Region;
 
 typedef struct {
   Region* start;
-  Region* end;
+  Region end;
 } Arena;
-
-typedef struct {
-  size_t item_size;
-  Arena arena;
-} TypedArena;
-
-// this is arena where the underlying datastructure is a linked list
 
 typedef struct {
   void* (*allocate)(void* context, size_t size);
@@ -34,29 +35,37 @@ typedef struct {
   void* context;
 } Allocator;
 
-void* arena_alloc(Arena* arena, size_t item_size, size_t count) {
-  void* buffer = malloc(item_size*count);
-  Region* new_region = malloc(sizeof(Region));
+void arena_append_region(Arena*);
+void* arena_alloc(Arena*, size_t);
+void arena_free(Arena*);
+Arena arena_init();
+Allocator arena_allocator(Arena*);
+
+void* arena_alloc(Arena* arena, size_t bytes) {
+  void* ptr;
+  if (bytes > PAGE_SIZE) {
+    printf("Tried to allocate more bytes then page size in allocator\n");
+    abort();
+  }
   
-  new_region->buffer = buffer;
-  new_region->item_size = item_size;
-  new_region->capacity = count;
-  new_region->next = NULL;
-  
-  if (!arena->start) {
-    arena->start = new_region;
-  } else if (!arena->end) {
-    arena->end = new_region;
-  } else {
-    arena->end->next = new_region;
-    arena->end = new_region;
+  if (arena->end.capacity - arena->end.balance < bytes) {
+    arena_append_region(arena);
   }
 
-  return buffer;
+  ptr = arena->end.buffer + arena->end.balance;
+  arena->end.balance += bytes;
+  return ptr;
 }
 
-void* typed_arena_alloc(TypedArena* arena, size_t count) {
-  return arena_alloc(&arena->arena, arena->item_size, count);
+void arena_append_region(Arena* arena) {
+  // TODO: page align
+  Region* new_region;
+  new_region = malloc(sizeof(*new_region));
+  new_region->buffer = malloc(PAGE_SIZE*sizeof(char));
+  new_region->balance = 0;
+  new_region->capacity = PAGE_SIZE;
+  arena->end.next = new_region;
+  arena->end = *new_region;
 }
 
 void arena_free(Arena* arena) {
@@ -64,38 +73,37 @@ void arena_free(Arena* arena) {
   current_region = arena->start;
   while (current_region) {
     free(current_region->buffer);
+    free(current_region);
     current_region = current_region->next;
   }
 }
 
-void arena_free_region(Arena* arena, void* region) {
-  current_region
+Arena arena_init() {
+  Arena arena;
+  Region* first;
+  first = malloc(sizeof(first));
+  arena.start = first;
+  arena.start->buffer = malloc(PAGE_SIZE*sizeof(char));
+  arena.start->capacity = PAGE_SIZE;
+  arena.start->balance = 0;
+  return arena;
 }
 
-void* typed_arena_allocate(void* arena, size_t count) {
-  return typed_arena_alloc((TypedArena*)arena, count);
+/* Allocator Specific */
+
+void* arena_alloc_allocator(void* arena, size_t bytes) {
+  return arena_alloc(arena, bytes);
 }
 
-void typed_arena_deallocate(void* arena, void* buffer) {
-  return 
+void arena_free_allocator(void* arena, void* buffer) {
+  arena_free(arena);
 }
 
-Allocator typed_arena_allocator(TypedArena* arena, size_t count) {
+Allocator arena_allocator(Arena* arena) {
   return (Allocator){
-    .context = arena,
-    .allocate = typed_arena_alloc,
-    .deallocate = 
+    .allocate = arena_alloc_allocator,
+    .deallocate = arena_free_allocator,
+    .context = arena
   };
 }
 
-void* malloc_allocate(void* context, size_t size) {
-  // just used to ignore the context pointer
-  return malloc(size);
-}
-
-Allocator malloc_allocator() {
-  return (Allocator){
-    .allocate = malloc_allocate,
-    .context = NULL
-  };
-}
