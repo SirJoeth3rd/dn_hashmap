@@ -77,7 +77,7 @@ void* hm_get(HashMap* map, uint64_t key) {
       return NULL;
     }
     distance++;
-    index++;
+    index = (index + 1) % map->capacity; // rap around
   }
   return NULL;
 }
@@ -104,7 +104,7 @@ void hm_del(HashMap* map, uint64_t key) {
     }
     
     distance++;
-    index++;
+    index = (index + 1) % map->capacity;
   }
   //TODO: also delete the value out of the underlying vector and update every data pointer to it's new position
   // Is that even worth it? Or should we just let the old values hang around in the vector?
@@ -127,7 +127,7 @@ void hm_put(HashMap* map, uint64_t key, void* item) {
       curr = tmp;
     }
     curr.distance++;
-    index++;
+    index = (index + 1) % map->capacity;
   }
   
   void* item_ptr = vec_add(&map->vector, item);
