@@ -8,6 +8,9 @@
   -- Also defined in here is the Allocator struct, this is not specific to the Arena.
  */
 
+#ifndef DN_ARENA
+#define DN_ARENA
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -26,20 +29,13 @@ typedef struct Region Region;
 
 typedef struct {
   Region* start;
-  Region end;
+  Region* end;
 } Arena;
-
-typedef struct {
-  void* (*allocate)(void* context, size_t size);
-  void (*deallocate)(void* context, void* buffer);
-  void* context;
-} Allocator;
 
 void arena_append_region(Arena*);
 void* arena_alloc(Arena*, size_t);
 void arena_free(Arena*);
 Arena arena_init();
-Allocator arena_allocator(Arena*);
 
 void* arena_alloc(Arena* arena, size_t bytes) {
   void* ptr;
@@ -48,24 +44,23 @@ void* arena_alloc(Arena* arena, size_t bytes) {
     abort();
   }
   
-  if (arena->end.capacity - arena->end.balance < bytes) {
+  if (arena->end->capacity - arena->end->balance < bytes) {
     arena_append_region(arena);
   }
 
-  ptr = arena->end.buffer + arena->end.balance;
-  arena->end.balance += bytes;
+  ptr = arena->end->buffer + arena->end->balance;
+  arena->end->balance += bytes;
   return ptr;
 }
 
 void arena_append_region(Arena* arena) {
-  // TODO: page align
   Region* new_region;
   new_region = malloc(sizeof(*new_region));
-  new_region->buffer = malloc(PAGE_SIZE*sizeof(char));
-  new_region->balance = 0;
-  new_region->capacity = PAGE_SIZE;
-  arena->end.next = new_region;
-  arena->end = *new_region;
+  arena->end->next = new_region;
+  arena->end = new_region;
+  arena->end->buffer = malloc(PAGE_SIZE*sizeof(char));
+  arena->end->balance = 0;
+  arena->end->capacity = PAGE_SIZE;
 }
 
 void arena_free(Arena* arena) {
@@ -86,24 +81,8 @@ Arena arena_init() {
   arena.start->buffer = malloc(PAGE_SIZE*sizeof(char));
   arena.start->capacity = PAGE_SIZE;
   arena.start->balance = 0;
+  arena.end = arena.start;
   return arena;
 }
 
-/* Allocator Specific */
-
-void* arena_alloc_allocator(void* arena, size_t bytes) {
-  return arena_alloc(arena, bytes);
-}
-
-void arena_free_allocator(void* arena, void* buffer) {
-  arena_free(arena);
-}
-
-Allocator arena_allocator(Arena* arena) {
-  return (Allocator){
-    .allocate = arena_alloc_allocator,
-    .deallocate = arena_free_allocator,
-    .context = arena
-  };
-}
-
+#endif // DN_ARENA

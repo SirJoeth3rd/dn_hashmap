@@ -1,3 +1,6 @@
+#ifndef DN_HASHMAP
+#define DN_HASHMAP
+
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -48,29 +51,29 @@ typedef struct HashMap {
 } HashMap;
 
 HashMap hm_init(size_t);
-HashMap hm_resize(HashMap map);
-HashMap hm_put(HashMap map, uint64_t key, void* item);
-HashMap hm_del(HashMap map, uint64_t key);
-void* hm_get(HashMap map, uint64_t key);
+void hm_resize(HashMap*);
+void hm_put(HashMap*, uint64_t, void*);
+void hm_del(HashMap*, uint64_t);
+void* hm_get(HashMap*, uint64_t);
 
 HashMap hm_init(size_t item_size) {
   HashMap map;
   map.vector = vec_init(item_size);
   map.prime_index = 0;
   map.capacity = PRIMES[map.prime_index];
-  map.keys = malloc(sizeof(HashHead)*map.capacity);
+  map.keys = calloc(map.capacity, sizeof(HashHead));
   return map;
 }
 
-void* hm_get(HashMap map, uint64_t key) {
+void* hm_get(HashMap* map, uint64_t key) {
   int distance = 0;
-  int index = key % map.capacity;
+  int index = key % map->capacity;
 
-  while (!map.keys[index].data) {
-    if (map.keys[index].key == key) {
-      return map.keys[index].data;
+  while (map->keys[index].data) {
+    if (map->keys[index].key == key) {
+      return map->keys[index].data;
     }
-    if (map.keys[index].distance < distance) {
+    if (map->keys[index].distance < distance) {
       return NULL;
     }
     distance++;
@@ -79,24 +82,24 @@ void* hm_get(HashMap map, uint64_t key) {
   return NULL;
 }
 
-HashMap hm_del(HashMap map, uint64_t key) {
+void hm_del(HashMap* map, uint64_t key) {
   int distance = 0;
-  int index = key % map.capacity;
+  int index = key % map->capacity;
 
-  while (map.keys[index].data) {
-    if (map.keys[index].key == key) {
-      map.keys[index] = (HashHead){0};
-      for (int i = index; map.keys[i+1].data; i++) {
-	if (map.keys[i+1].distance == 0) {
+  while (map->keys[index].data) {
+    if (map->keys[index].key == key) {
+      map->keys[index] = (HashHead){0};
+      for (int i = index; map->keys[i+1].data; i++) {
+	if (map->keys[i+1].distance == 0) {
 	  break;
 	} else {
-	  map.keys[i] = map.keys[i+1];
-	  map.keys[i].distance--;
+	  map->keys[i] = map->keys[i+1];
+	  map->keys[i].distance--;
 	}
       }
     }
     
-    if (map.keys[index].distance < distance) {
+    if (map->keys[index].distance < distance) {
       break;
     }
     
@@ -104,55 +107,53 @@ HashMap hm_del(HashMap map, uint64_t key) {
     index++;
   }
   //TODO: also delete the value out of the underlying vector and update every data pointer to it's new position
-  return map;
+  // Is that even worth it? Or should we just let the old values hang around in the vector?
 }
 
-HashMap hm_put(HashMap map, uint64_t key, void* item) {
+void hm_put(HashMap* map, uint64_t key, void* item) {
   HashHead tmp, curr;
   
-  if (map.vector.balance > map.capacity * 0.66) {
-    //TODO: what's a better fraction than .66 here?
+  if (map->vector.balance > map->capacity * 0.75) {
     hm_resize(map);
   }
 
-  unsigned int index = key % map.capacity;
-  curr = map.keys[index];
+  unsigned int index = key % map->capacity;
+  curr = map->keys[index];
 
-  while (map.keys[index].data || map.keys[index].key != key) {
-    if (map.keys[index].distance > curr.distance) {
-      tmp = map.keys[index];
-      map.keys[index] = curr;
+  while (map->keys[index].data && map->keys[index].key != key) {
+    if (map->keys[index].distance > curr.distance) {
+      tmp = map->keys[index];
+      map->keys[index] = curr;
       curr = tmp;
     }
     curr.distance++;
     index++;
   }
   
-  void* item_ptr = vec_add(&map.vector, item);
+  void* item_ptr = vec_add(&map->vector, item);
 
   curr.data = item_ptr;
-  map.keys[index] = curr;
-  
-  return map;
+  curr.key = key;
+  map->keys[index] = curr;
 }
 
-HashMap hm_resize(HashMap map) {
+void hm_resize(HashMap* map) {
   HashHead* oldkeys;
   unsigned int oldlength;
-  oldkeys = map.keys;
-  oldlength = map.capacity;
+  oldkeys = map->keys;
+  oldlength = map->capacity;
   
-  map.prime_index = map.prime_index + 1;
-  map.capacity = PRIMES[map.prime_index];
-  map.keys = malloc(sizeof(HashHead)*map.capacity);
+  map->prime_index = map->prime_index + 1;
+  map->capacity = PRIMES[map->prime_index];
+  map->keys = calloc(map->capacity, sizeof(HashHead));
 
   for (unsigned int i = 0; i < oldlength; i++) {
     if (oldkeys[i].data) {
-      map = hm_put(map, oldkeys[i].key, oldkeys[i].data);
+      hm_put(map, oldkeys[i].key, oldkeys[i].data);
     }
   }
 
   free(oldkeys);
-  return map;
 }
 
+#endif // DN_HASHMAP
