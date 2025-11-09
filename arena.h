@@ -11,6 +11,7 @@
 #ifndef DN_ARENA
 #define DN_ARENA
 
+#include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@ Arena arena_init();
 void* arena_alloc(Arena* arena, size_t bytes) {
   void* ptr;
   if (bytes > PAGE_SIZE) {
+    // TODO: allocate a region just for these bytes and make a new one.
     printf("Tried to allocate more bytes then page size in allocator\n");
     abort();
   }
@@ -53,9 +55,17 @@ void* arena_alloc(Arena* arena, size_t bytes) {
   return ptr;
 }
 
+void* arena_alloc_val(Arena* arena, size_t bytes, void* initial) {
+  void* ptr;
+  ptr = arena_alloc(arena, bytes);
+
+  memcpy(ptr, initial, bytes);
+  return ptr;
+}
+
 void arena_append_region(Arena* arena) {
   Region* new_region;
-  new_region = malloc(sizeof(*new_region));
+  new_region = calloc(1, sizeof(*new_region));
   arena->end->next = new_region;
   arena->end = new_region;
   arena->end->buffer = malloc(PAGE_SIZE*sizeof(char));
@@ -64,24 +74,25 @@ void arena_append_region(Arena* arena) {
 }
 
 void arena_free(Arena* arena) {
-  Region* current_region;
+  Region* current_region, *next_region;
   current_region = arena->start;
   while (current_region) {
     free(current_region->buffer);
+    next_region = current_region->next;
     free(current_region);
-    current_region = current_region->next;
+    current_region = next_region;
   }
 }
 
 Arena arena_init() {
   Arena arena;
   Region* first;
-  first = malloc(sizeof(first));
+  first = calloc(1, sizeof(*first));
+  first->buffer = malloc(PAGE_SIZE*sizeof(char));
+  first->capacity = PAGE_SIZE;
+  first->balance = 0;
   arena.start = first;
-  arena.start->buffer = malloc(PAGE_SIZE*sizeof(char));
-  arena.start->capacity = PAGE_SIZE;
-  arena.start->balance = 0;
-  arena.end = arena.start;
+  arena.end = first;
   return arena;
 }
 
