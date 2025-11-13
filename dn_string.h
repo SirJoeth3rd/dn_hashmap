@@ -23,6 +23,13 @@ char* String_cstring(Arena* arena, String str) {
   return tmp_buffer;
 }
 
+String String_from_cstring(char* chars) {
+  String str;
+  str.chars = chars;
+  str.length = strlen(chars);
+  return str;
+}
+
 bool String_cmp(String str1, const char* cstr) {
   unsigned int i;
   for (i = 0; i < str1.length; i++) {

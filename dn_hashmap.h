@@ -52,7 +52,7 @@ typedef struct HashMap {
 
 HashMap hm_init(size_t);
 void hm_resize(HashMap*);
-void hm_put(HashMap*, uint64_t, void*);
+void* hm_put(HashMap*, uint64_t, void*); // returns the inserted items new pointer in the vector
 void hm_del(HashMap*, uint64_t);
 void* hm_get(HashMap*, uint64_t);
 
@@ -110,7 +110,7 @@ void hm_del(HashMap* map, uint64_t key) {
   // Is that even worth it? Or should we just let the old values hang around in the vector?
 }
 
-void hm_put(HashMap* map, uint64_t key, void* item) {
+void* hm_put(HashMap* map, uint64_t key, void* item) {
   HashHead tmp, curr;
   
   if (map->vector.balance > map->capacity * 0.75) {
@@ -135,6 +135,8 @@ void hm_put(HashMap* map, uint64_t key, void* item) {
   curr.data = item_ptr;
   curr.key = key;
   map->keys[index] = curr;
+
+  return item_ptr;
 }
 
 void hm_resize(HashMap* map) {

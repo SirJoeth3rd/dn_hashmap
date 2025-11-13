@@ -42,7 +42,7 @@ void* arena_alloc(Arena* arena, size_t bytes) {
   void* ptr;
   if (bytes > PAGE_SIZE) {
     // TODO: allocate a region just for these bytes and make a new one.
-    printf("Tried to allocate more bytes then page size in allocator\n");
+    printf("Tried to allocate more bytes (%li) then page size in allocator\n", bytes);
     abort();
   }
   
