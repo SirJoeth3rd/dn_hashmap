@@ -9,8 +9,6 @@
 /* A generic hashmap in C, implemented by considering every key, item as a group of bytes.
    Key assumed to be uint64_t, up to the user to convert their actual keys to u64
  */
-
-// TODO: keep the actual items in a dn_vector, only keep {int distance, int key, void* in_vector_pos} struct in the hashmap.
 #define MAX_PRIME_INDEX 20
 
 static const unsigned int PRIMES[MAX_PRIME_INDEX + 1] = {
