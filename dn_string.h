@@ -6,8 +6,10 @@
 #include <stdbool.h>
 #include <assert.h>
 
+#define TO_STRING(charbuf) (String){.chars = charbuf, .length = strlen(charbuf)}
+
 typedef struct {
-  const char* chars;
+  char* chars;
   unsigned int length;
 } String;
 
@@ -56,8 +58,33 @@ bool String_cmp(String str1, const char* cstr) {
   return true;
 }
 
-void String_cpy(String str, char* buffer) {
+void String_cpy_out(String str, char* buffer) {
   memcpy(buffer, str.chars, str.length);
+}
+
+String String_cpy_in(String str, char* buffer) {
+  unsigned int buffer_len;
+  buffer_len = strlen(buffer);
+  if (buffer_len > str.length) {
+    // TODO: error here
+  }
+  strcpy(str.chars, buffer);
+  return str;
+}
+
+String String_append(String str, String app) {
+  //TODO: fix (if my underlying chars is empty on the end just use that instead)
+  String new_string;
+  new_string.length = str.length + app.length;
+  new_string.chars = malloc(sizeof(char)*new_string.length);
+  strncpy(new_string.chars, str.chars, str.length);
+  strncpy(&new_string.chars[str.length], app.chars, app.length);
+  return new_string;
+}
+
+String String_subslice(String str, int start, int end) {
+  String new_string;
+  //TODO: dew it
 }
 
 #endif
